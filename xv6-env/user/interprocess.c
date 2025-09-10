@@ -35,10 +35,10 @@ BI
 
 Observe that the outputs of the child processes are intermixed.
 
-Modify the program below so that each child process attempts 
-to read a character from the pipe BEFORE its printf() and then 
-writes that character back into the pipe immediately AFTER its 
-printf(). If it is done correctly, after recompilation the outputs 
+Modify the program below so that each child process attempts
+to read a character from the pipe BEFORE its printf() and then
+writes that character back into the pipe immediately AFTER its
+printf(). If it is done correctly, after recompilation the outputs
 of interprocess child processes no longer intermix:
 
 $ interprocess
@@ -53,37 +53,37 @@ report.
 
 */
 
-// Modifications here by John Hughes student number 22788221
+// Modifications here by John Hughes student number
 // This function creates the child process that prints its message
 // It takes 2 arguments, the name of the process and a pointer to the pipe
-void create_child(char name, int *p) {
+void create_child(char name, int *p)
+{
   char buf;
-  if (fork()==0)
+  if (fork() == 0)
   {
-     for (int j=0; j<200; j++)
-     {
-        read(p[0], &buf, 1);  // wait for the token
-        printf("I am child %c\n", name); // write the message
-        write(p[1], &buf, 1); // send the token to the pipe
-     }
-     exit(0);
+    for (int j = 0; j < 200; j++)
+    {
+      read(p[0], &buf, 1);             // wait for the token
+      printf("I am child %c\n", name); // write the message
+      write(p[1], &buf, 1);            // send the token to the pipe
+    }
+    exit(0);
   }
 }
 
-int
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int p[2];
-  char c='$';          // character token
+  char c = '$'; // character token
 
-  pipe(p);             // create pipe
+  pipe(p); // create pipe
 
-  write(p[1],&c,1);    // write the character into the pipe
+  write(p[1], &c, 1); // write the character into the pipe
 
   create_child('A', p); // create process A
   create_child('B', p); // create process B
 
-  for (int i=0; i<2; i++)   // wait for the two child processes to finish
+  for (int i = 0; i < 2; i++) // wait for the two child processes to finish
   {
     wait(0);
   }
