@@ -1,53 +1,97 @@
 #include "kernel/types.h"
 #include "user/user.h"
 
-// circulate_byte.c written by John Hughes
-#define NUM_LOOPS 10000
-#define NUM_CHILDREN 2
+#define NUM_LOOPS 5000
+#define NUM_CHILDREN 3
 #define NUM_PIPES (NUM_CHILDREN + 1)
 
-// child process
-void circulate(int (*p)[NUM_CHILDREN], int readpipe)
+static void
+circulate(int (*p)[2], int idx)
 {
-    char buf;                                 // create char to store piped char
-    while (read(p[readpipe][0], &buf, 1) > 0) // read from "start" pipe
-        write(p[readpipe + 1][1], &buf, 1);   // write to "end" pipe
+    // Close all fds except the two this child uses
+    for (int k = 0; k < NUM_PIPES; k++)
+    {
+        if (k != idx)
+            close(p[k][0]); // keep read end of p[idx]
+        if (k != idx + 1)
+            close(p[k][1]); // keep write end of p[idx+1]
+    }
+
+    char buf;
+    int n;
+    while ((n = read(p[idx][0], &buf, 1)) == 1)
+    {
+        if (write(p[idx + 1][1], &buf, 1) != 1)
+            exit(1);
+    }
+    // read() returns 0 on EOF or -1 on error; either way, exit
+    exit(0);
 }
 
-int main()
+int main(void)
 {
-    int p[NUM_PIPES][2]; // create array to store pipes
-    for (int i = 0; i < NUM_PIPES; i++)
-        pipe(p[i]); // loop through array and create pipes
+    int p[NUM_PIPES][2];
 
-    int pids[NUM_CHILDREN];                // create array to store PIDs
-    for (int i = 0; i < NUM_CHILDREN; i++) // repeat for all children
-        if ((pids[i] = fork()) == 0)
-        {                    // fork and store pids
-            circulate(p, i); // call child function
-            exit(0);         // kill child
+    for (int i = 0; i < NUM_PIPES; i++)
+    {
+        if (pipe(p[i]) < 0)
+        {
+            printf("pipe(%d) failed\n", i);
+            exit(1);
         }
+    }
 
-    // Parent process
+    for (int i = 0; i < NUM_CHILDREN; i++)
+    {
+        int pid = fork();
+        if (pid < 0)
+        {
+            printf("fork failed\n");
+            exit(1);
+        }
+        if (pid == 0)
+            circulate(p, i);
+    }
+
+    // Parent: keep only p[0][1] (writer) and p[NUM_CHILDREN][0] (reader)
+    for (int k = 0; k < NUM_PIPES; k++)
+    {
+        if (k != 0)
+            close(p[k][1]);
+        if (k != NUM_CHILDREN)
+            close(p[k][0]);
+    }
+
     char buf = 'A';
-    printf("Parent sending: %c\n", buf); // print opening message
+    int loops_done = 0;
 
-    write(p[0][1], &buf, 1); // Write to first pipe to begin
-    for (int i = 1; i <= NUM_LOOPS && read(p[NUM_CHILDREN][0], &buf, 1); i++)
-    {                            // Read from third pipe
-        write(p[0][1], &buf, 1); // Write to first pipe
+    printf("Parent sending: %c\n", buf);
+
+    if (write(p[0][1], &buf, 1) != 1)
+    {
+        printf("write failed\n");
     }
-    printf("Parent received %c in %d loops\n", buf, NUM_LOOPS);
-
-    for (int i = 0; i < NUM_PIPES; i++)
-    {                   // loop through each pipe
-        close(p[i][0]); // close read end
-        close(p[i][1]); // close write end
+    else
+    {
+        while (loops_done < NUM_LOOPS)
+        {
+            int n = read(p[NUM_CHILDREN][0], &buf, 1);
+            if (n != 1)
+                break; // EOF or error
+            if (write(p[0][1], &buf, 1) != 1)
+                break;
+            loops_done++;
+        }
     }
 
-    // Clean up and exit
-    for (int i = 0; i < NUM_CHILDREN; i++) // loop through each child pid
-        kill(pids[i]);                     // kill each child
+    // Stop the ring: closing p[0][1] causes EOF to propagate through children
+    close(p[0][1]);
+    close(p[NUM_CHILDREN][0]);
 
+    // Reap children cleanly
+    for (int i = 0; i < NUM_CHILDREN; i++)
+        wait(0);
+
+    printf("Parent received %c in %d loops\n", buf, loops_done);
     exit(0);
 }
